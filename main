@@ -1,0 +1,478 @@
+import sqlite3
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import simpledialog
+from tkinter import ttk
+
+class BibliotecaApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Sistema de Biblioteca")
+        self.root.geometry("400x300")
+
+        self.conn = sqlite3.connect('biblioteca.db')
+        self.criar_tabelas()
+        self.inserir_admin()
+
+        self.lbl_titulo = tk.Label(root, text="Bem-vindo ao Sistema de Biblioteca", font=("Helvetica", 16, "bold"))
+        self.lbl_titulo.pack(pady=20)
+
+        self.btn_login = tk.Button(root, text="Login", font=("Helvetica", 12), command=self.abrir_tela_login)
+        self.btn_login.pack(pady=10)
+
+        self.btn_cadastrar = tk.Button(root, text="Cadastrar Novo Usuário", font=("Helvetica", 12), command=self.abrir_tela_cadastro)
+        self.btn_cadastrar.pack(pady=10)
+
+    def criar_tabelas(self):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY,
+                matricula TEXT UNIQUE,
+                nome TEXT,
+                senha TEXT,
+                tipo TEXT
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS titulos (
+                id INTEGER PRIMARY KEY,
+                nome TEXT,
+                disponivel BOOLEAN
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS emprestimos (
+                id INTEGER PRIMARY KEY,
+                titulo_id INTEGER,
+                nome_usuario TEXT,
+                data_devolucao TEXT
+            )
+        ''')
+        self.conn.commit()
+
+    def inserir_admin(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM usuarios WHERE matricula = 'Adm'")
+        admin = cursor.fetchone()
+
+        if not admin:
+            cursor.execute("INSERT INTO usuarios (matricula, nome, senha, tipo) VALUES (?, ?, ?, ?)",
+                           ('Adm', 'Administrador', 'Adm', 'admin'))
+            self.conn.commit()
+
+    def abrir_tela_login(self):
+        self.root.destroy()  # Fechar a tela inicial
+        login_window = tk.Tk()
+        app = TelaLogin(login_window, self.conn)
+        login_window.mainloop()
+
+    def abrir_tela_cadastro(self):
+        self.root.destroy()  # Fechar a tela inicial
+        cadastro_window = tk.Tk()
+        app = TelaCadastro(cadastro_window, self.conn)
+        cadastro_window.mainloop()
+
+class TelaLogin:
+    def __init__(self, root, conn):
+        self.root = root
+        self.root.title("Login")
+        self.root.geometry("400x300")
+        self.conn = conn
+
+        self.lbl_matricula = tk.Label(root, text="Matrícula:")
+        self.lbl_matricula.pack()
+        self.entry_matricula = tk.Entry(root)
+        self.entry_matricula.pack()
+
+        self.lbl_senha = tk.Label(root, text="Senha:")
+        self.lbl_senha.pack()
+        self.entry_senha = tk.Entry(root, show="*")
+        self.entry_senha.pack()
+
+        self.btn_entrar = tk.Button(root, text="Entrar", font=("Helvetica", 12), command=self.fazer_login)
+        self.btn_entrar.pack(pady=10)
+
+        self.btn_voltar = tk.Button(root, text="Voltar", font=("Helvetica", 12), command=self.voltar)
+        self.btn_voltar.pack(pady=10)
+
+    def fazer_login(self):
+        matricula = self.entry_matricula.get()
+        senha = self.entry_senha.get()
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM usuarios WHERE matricula = ? AND senha = ?", (matricula, senha))
+        usuario = cursor.fetchone()
+
+        if usuario:
+            self.root.destroy()  # Fechar a tela de login
+            usuario_window = tk.Tk()
+            app = TelaUsuarioComum(usuario_window, self.conn, usuario[2], usuario[4])
+            usuario_window.mainloop()
+
+            if usuario[4] == 'admin':
+                admin_window = tk.Tk()
+                app = TelaAdministrador(admin_window, self.conn, usuario[2], usuario_window)
+                admin_window.mainloop()
+        else:
+            messagebox.showerror("Erro de Login", "Matrícula ou senha inválidas.")
+
+    def voltar(self):
+        self.root.destroy()  # Fechar a tela de login
+        menu_window = tk.Tk()
+        app = BibliotecaApp(menu_window)
+        menu_window.mainloop()
+
+class TelaUsuarioComum:
+    def __init__(self, root, conn, nome_usuario, tipo_usuario):
+        self.root = root
+        self.root.title("Usuário Comum")
+        self.root.geometry("400x300")
+        self.conn = conn
+        self.nome_usuario = nome_usuario
+        self.tipo_usuario = tipo_usuario
+
+        self.lbl_bem_vindo = tk.Label(root, text=f"Bem-vindo, {nome_usuario}!", font=("Helvetica", 16, "bold"))
+        self.lbl_bem_vindo.pack(pady=20)
+
+        self.btn_consultar_livros = tk.Button(root, text="Consultar Livros Disponíveis", font=("Helvetica", 12), command=self.consultar_livros)
+        self.btn_consultar_livros.pack(pady=10)
+
+        self.btn_realizar_locacao = tk.Button(root, text="Realizar Locação", font=("Helvetica", 12), command=self.realizar_locacao)
+        self.btn_realizar_locacao.pack(pady=10)
+
+        if self.tipo_usuario == 'admin':
+            self.btn_acesso_admin = tk.Button(root, text="Acesso Administrativo", font=("Helvetica", 12), command=self.acesso_admin)
+            self.btn_acesso_admin.pack(pady=10)
+
+        self.btn_sair = tk.Button(root, text="Sair", font=("Helvetica", 12), command=self.sair)
+        self.btn_sair.pack(pady=10)
+
+    def consultar_livros(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, nome FROM titulos WHERE disponivel = 1")
+        titulos = cursor.fetchall()
+
+        if not titulos:
+            messagebox.showinfo("Consultar Livros", "Nenhum título disponível para locação.")
+        else:
+            consultar_window = tk.Toplevel(self.root)
+            app = TelaConsultarTitulos(consultar_window, titulos)
+
+    def realizar_locacao(self, id_titulo=None):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM titulos WHERE disponivel = 1")
+        titulos = cursor.fetchall()
+
+        if not titulos:
+            messagebox.showinfo("Realizar Locação", "Nenhum título disponível para locação.")
+            return
+
+        if id_titulo is None:
+            mensagem = "Títulos Disponíveis para Locação:\n"
+            for titulo in titulos:
+                mensagem += f"ID: {titulo[0]}, Título: {titulo[1]}\n"
+            id_titulo = simpledialog.askinteger("Realizar Locação", mensagem)
+
+            if id_titulo is None:
+                return
+
+            if id_titulo == 0:
+                return
+
+        cursor.execute("SELECT * FROM titulos WHERE id = ? AND disponivel = 1", (id_titulo,))
+        titulo = cursor.fetchone()
+
+        if not titulo:
+            messagebox.showerror("Erro de Locação", "ID de título inválido.")
+            return
+
+        cursor.execute("UPDATE titulos SET disponivel = 0 WHERE id = ?", (id_titulo,))
+
+        import datetime
+        data_devolucao = datetime.datetime.now() + datetime.timedelta(days=30)
+        data_devolucao_str = data_devolucao.strftime('%Y-%m-%d')
+
+        cursor.execute("INSERT INTO emprestimos (titulo_id, nome_usuario, data_devolucao) VALUES (?, ?, ?)",
+                       (id_titulo, self.nome_usuario, data_devolucao_str))
+
+        self.conn.commit()
+        messagebox.showinfo("Realizar Locação", f"O título '{titulo[1]}' foi alugado por {self.nome_usuario}.\nData de Devolução: {data_devolucao_str}")
+
+
+    def sair(self):
+        self.root.destroy()  
+        menu_window = tk.Tk()
+        app = BibliotecaApp(menu_window)
+        menu_window.mainloop()
+
+    def acesso_admin(self):
+        self.root.withdraw()  # Esconder a tela de usuário comum
+        admin_window = tk.Toplevel()  # Abrir uma tela secundária na mesma janela
+        app = TelaAdministrador(admin_window, self.conn, self.nome_usuario, self.root)
+
+class TelaConsultarTitulos:
+    def __init__(self, root, titulos):
+        self.root = root
+        self.root.title("Títulos Disponíveis")
+        self.root.geometry("500x400")
+
+        self.titulos = titulos
+
+        self.lbl_titulo = tk.Label(root, text="Títulos Disponíveis", font=("Helvetica", 16, "bold"))
+        self.lbl_titulo.pack(pady=20)
+
+        self.tree = ttk.Treeview(root, columns=("ID", "Título"))
+        self.tree.heading("#1", text="ID")
+        self.tree.heading("#2", text="Título")
+        self.tree.column("#1", width=50)  # Ajustar a largura da coluna "ID"
+        self.tree.column("#2", width=300)  # Ajustar a largura da coluna "Título"
+        self.tree.pack()
+
+        self.populate_tree()
+
+        self.btn_fechar = tk.Button(root, text="Fechar", font=("Helvetica", 12), command=self.fechar)
+        self.btn_fechar.pack(pady=10)
+
+    def populate_tree(self):
+        for titulo in self.titulos:
+            self.tree.insert("", "end", values=titulo)
+
+    def fechar(self):
+        self.root.destroy()        
+
+class TelaCadastro:
+    def __init__(self, root, conn):
+        self.root = root
+        self.root.title("Cadastro de Usuário")
+        self.root.geometry("400x300")
+        self.conn = conn
+
+        self.lbl_titulo = tk.Label(root, text="Cadastrar Novo Usuário", font=("Helvetica", 16, "bold"))
+        self.lbl_titulo.pack(pady=20)
+
+        self.lbl_nome = tk.Label(root, text="Nome:")
+        self.lbl_nome.pack()
+
+        self.entry_nome = tk.Entry(root)
+        self.entry_nome.pack()
+
+        self.lbl_matricula = tk.Label(root, text="Matrícula:")
+        self.lbl_matricula.pack()
+
+        self.entry_matricula = tk.Entry(root)
+        self.entry_matricula.pack()
+
+        self.lbl_senha = tk.Label(root, text="Senha:")
+        self.lbl_senha.pack()
+
+        self.entry_senha = tk.Entry(root, show="*")
+        self.entry_senha.pack()
+
+        self.btn_cadastrar = tk.Button(root, text="Cadastrar", font=("Helvetica", 12), command=self.cadastrar_usuario)
+        self.btn_cadastrar.pack(pady=10)
+
+        self.btn_voltar = tk.Button(root, text="Voltar", font=("Helvetica", 12), command=self.voltar)
+        self.btn_voltar.pack(pady=10)
+
+    def cadastrar_usuario(self):
+        nome = self.entry_nome.get()
+        matricula = self.entry_matricula.get()
+        senha = self.entry_senha.get()
+
+        cursor = self.conn.cursor()
+
+        try:
+            cursor.execute("INSERT INTO usuarios (matricula, nome, senha, tipo) VALUES (?, ?, ?, ?)",
+                           (matricula, nome, senha, 'comum'))
+            self.conn.commit()
+            messagebox.showinfo("Cadastro", "Usuário criado com sucesso.")
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Erro de Cadastro", "Matrícula de usuário já existe. Por favor, escolha outra matrícula.")
+
+        self.entry_nome.delete(0, tk.END)
+        self.entry_matricula.delete(0, tk.END)
+        self.entry_senha.delete(0, tk.END)
+
+    def voltar(self):
+        self.root.destroy()  # Fechar a tela de cadastro
+        menu_inicial = tk.Tk()
+        app = BibliotecaApp(menu_inicial)
+        menu_inicial.mainloop()
+
+class TelaAdministrador:
+    def __init__(self, root, conn, nome_usuario, root_user):
+        self.root = root
+        self.root.title("Administrador")
+        self.root.geometry("400x300")
+        self.conn = conn
+        self.root_user = root_user
+
+        self.lbl_bem_vindo = tk.Label(root, text="Bem-vindo, Administrador!", font=("Helvetica", 16, "bold"))
+        self.lbl_bem_vindo.pack(pady=20)
+
+        self.btn_cadastrar_livros = tk.Button(root, text="Cadastrar Livros", font=("Helvetica", 12), command=self.cadastrar_livros)
+        self.btn_cadastrar_livros.pack(pady=10)
+
+        self.btn_gerenciar_livros = tk.Button(root, text="Gerenciar Livros", font=("Helvetica", 12), command=self.gerenciar_livros)
+        self.btn_gerenciar_livros.pack(pady=10)
+
+        self.btn_voltar = tk.Button(root, text="Voltar", font=("Helvetica", 12), command=self.voltar)
+        self.btn_voltar.pack(pady=10)
+
+    def cadastrar_livros(self):
+        self.root.withdraw()  # Esconder a tela de administrador
+        cadastrar_livros_window = tk.Toplevel()  # Abrir uma tela secundária na mesma janela
+        app = TelaCadastrarLivros(cadastrar_livros_window, self.conn, self.root_user)
+
+    def gerenciar_livros(self):
+        gerenciar_livros_window = tk.Toplevel(self.root)
+        app = TelaGerenciarLivros(gerenciar_livros_window, self.conn)
+
+    def voltar(self):
+        self.root.destroy()  # Fechar a tela do administrador
+        self.root_user.deiconify()  # Mostrar a tela do usuário comum novamente
+
+
+class TelaCadastrarLivros:
+    def __init__(self, root, conn, root_user):
+        self.root = root
+        self.root.title("Cadastrar Livros")
+        self.root.geometry("400x300")
+        self.conn = conn
+        self.root_user = root_user
+
+        self.lbl_titulo = tk.Label(root, text="Cadastrar Novo Livro", font=("Helvetica", 16, "bold"))
+        self.lbl_titulo.pack(pady=20)
+
+        self.lbl_nome = tk.Label(root, text="Nome do Livro:")
+        self.lbl_nome.pack()
+
+        self.entry_nome = tk.Entry(root)
+        self.entry_nome.pack()
+
+        self.btn_cadastrar = tk.Button(root, text="Cadastrar", font=("Helvetica", 12), command=self.cadastrar_livro)
+        self.btn_cadastrar.pack(pady=10)
+
+        self.btn_voltar = tk.Button(root, text="Voltar", font=("Helvetica", 12), command=self.voltar)
+        self.btn_voltar.pack(pady=10)
+
+    def cadastrar_livro(self):
+        nome_livro = self.entry_nome.get()
+
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT INTO titulos (nome, disponivel) VALUES (?, ?)", (nome_livro, 1))
+        self.conn.commit()
+        messagebox.showinfo("Cadastro de Livro", f"Livro '{nome_livro}' cadastrado com sucesso.")
+        self.entry_nome.delete(0, tk.END)
+
+    def voltar(self):
+        self.root.destroy()  # Fechar a tela de cadastrar livros
+        self.root_user.deiconify()  # Mostrar a tela do administrador novamente
+
+
+class TelaGerenciarLivros:
+    def __init__(self, root, conn):
+        self.root = root
+        self.root.title("Gerenciar Livros")
+        self.root.geometry("900x500")  # Ajuste as dimensões conforme necessário
+        self.conn = conn
+
+        self.lbl_titulo = tk.Label(root, text="Gerenciar Livros", font=("Helvetica", 16, "bold"))
+        self.lbl_titulo.pack(pady=20)
+
+        self.btn_editar_livro = tk.Button(root, text="Editar Livro", font=("Helvetica", 12), command=self.editar_livro)
+        self.btn_editar_livro.pack(pady=10)
+
+        self.tree = ttk.Treeview(root, columns=("ID", "Título", "Disponível", "Alugado por", "Devolução"))
+        self.tree.heading("#1", text="ID")
+        self.tree.heading("#2", text="Título")
+        self.tree.heading("#3", text="Disponível")
+        self.tree.heading("#4", text="Alugado por")
+        self.tree.heading("#5", text="Devolução")
+        self.tree.column("#1", width=40)  # Ajustar a largura da coluna "ID"
+        self.tree.column("#2", width=200)  # Ajustar a largura da coluna "Título"
+        self.tree.column("#3", width=100)  # Ajustar a largura da coluna "Disponível"
+        self.tree.column("#4", width=150)  # Ajustar a largura da coluna "Alugado por"
+        self.tree.column("#5", width=150)  # Ajustar a largura da coluna "Devolução"
+        self.tree.pack()
+
+        self.update_tree()  # Atualizar a exibição inicial
+
+        self.btn_voltar = tk.Button(root, text="Voltar", font=("Helvetica", 12), command=self.voltar)
+        self.btn_voltar.pack(pady=10)
+
+    def update_tree(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT titulos.id, titulos.nome, "
+                       "CASE WHEN titulos.disponivel THEN 'Sim' ELSE 'Não' END AS disponibilidade, "
+                       "COALESCE(emprestimos.nome_usuario, 'N/A') AS alugado_por, "
+                       "COALESCE(emprestimos.data_devolucao, 'N/A') AS devolucao "
+                       "FROM titulos LEFT JOIN emprestimos ON titulos.id = emprestimos.titulo_id")
+        rows = cursor.fetchall()
+
+        self.tree.delete(*self.tree.get_children())  # Limpar a exibição anterior
+
+        for row in rows:
+            self.tree.insert("", "end", values=row)
+
+    def editar_livro(self):
+        editar_window = tk.Toplevel(self.root)
+        app = TelaEditarLivro(editar_window, self.conn)
+
+    def voltar(self):
+        self.root.destroy()  # Fechar a tela de gerenciar livros
+
+
+
+class TelaEditarLivro:
+    def __init__(self, root, conn):
+        self.root = root
+        self.root.title("Editar Livro")
+        self.root.geometry("400x300")
+        self.conn = conn
+
+        self.lbl_titulo = tk.Label(root, text="Editar Livro", font=("Helvetica", 16, "bold"))
+        self.lbl_titulo.pack(pady=20)
+
+        self.lbl_id = tk.Label(root, text="ID do Livro:")
+        self.lbl_id.pack()
+
+        self.entry_id = tk.Entry(root)
+        self.entry_id.pack()
+
+        self.lbl_nome = tk.Label(root, text="Novo Nome:")
+        self.lbl_nome.pack()
+
+        self.entry_nome = tk.Entry(root)
+        self.entry_nome.pack()
+
+        self.btn_editar = tk.Button(root, text="Editar", font=("Helvetica", 12), command=self.editar_livro)
+        self.btn_editar.pack(pady=10)
+
+    def editar_livro(self):
+        id_livro = self.entry_id.get()
+        novo_nome = self.entry_nome.get()
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM titulos WHERE id = ?", (id_livro,))
+        livro = cursor.fetchone()
+
+        if not livro:
+            messagebox.showerror("Erro de Edição", "ID de livro inválido.")
+            return
+
+        cursor.execute("UPDATE titulos SET nome = ? WHERE id = ?", (novo_nome, id_livro))
+        self.conn.commit()
+        messagebox.showinfo("Edição de Livro", f"Livro '{livro[1]}' editado com sucesso.")
+
+        self.entry_id.delete(0, tk.END)
+        self.entry_nome.delete(0, tk.END)
+
+def main():
+    root = tk.Tk()
+    app = BibliotecaApp(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
